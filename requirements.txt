@@ -1,0 +1,30 @@
+# Core Framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+pydantic>=2.10.0
+pydantic-settings>=2.6.0
+python-multipart>=0.0.12
+
+# Database & Storage
+sqlalchemy[asyncio]>=2.0.36
+aiosqlite>=0.20.0
+greenlet>=3.0.0
+alembic>=1.14.0
+
+# AI / LLM SDK
+google-genai>=0.1.1
+python-dotenv>=1.0.1
+
+# Document Processing
+pypdf>=5.1.0
+reportlab>=4.2.5
+
+# Audio / TTS
+edge-tts>=6.1.12
+pydub>=0.25.1
+pyttsx3>=2.99
+
+# HTTP & Testing
+httpx>=0.28.0
+pytest>=8.3.3
+pytest-asyncio>=0.24.0

@@ -1,0 +1,101 @@
+TECHNICAL SPECIFICATION: EVENT-DRIVEN MICROSERVICES ARCHITECTURE
+Document Identifier: RFC-ARCH-2026-004
+Revision: 2.1
+Status: Approved Architectural Standard
+
+================================================================================
+1. EXECUTIVE SUMMARY & ARCHITECTURAL MOTIVATION
+================================================================================
+
+Monolithic enterprise systems typically rely on shared relational databases and
+synchronous HTTP/REST communication across internal modules. While simple to
+reason about initially, synchronous architectures introduce strong runtime
+coupling, temporal dependencies, cascading system failures, and severe throughput
+limitations under peak transactional workloads.
+
+This technical specification details the design standards for an asynchronous,
+event-driven microservices architecture. By utilizing decoupled pub/sub message
+brokers, persistent event streams, and eventual consistency protocols, systems
+achieve horizontal scalability, fault isolation, and independent deployability.
+
+================================================================================
+2. CORE ARCHITECTURAL PATTERNS
+================================================================================
+
+2.1 EVENT SOURCING
+In traditional CRUD architectures, databases record only the current state of an
+entity, discarding the chronological history of operations that produced that
+state. Event Sourcing models state mutations as an immutable, append-only sequence
+of domain events.
+
+- Event Store: The single source of truth for the system. Every state transition
+  is persisted as an immutable event object with an auto-incrementing sequence ID,
+  UUID identifier, aggregate ID, timestamp, and payload.
+- State Reconstruction: An entity's state at any point in time can be computed
+  deterministically by replaying its event log from origin to the target timestamp.
+- Temporal Queries & Auditability: Facilitates complete, tamper-evident audit
+  trails and backward-compatible model evolutions without data migration loss.
+
+2.2 COMMAND QUERY RESPONSIBILITY SEGREGATION (CQRS)
+To prevent complex data mutations from conflicting with high-frequency read queries,
+the data access layer is partitioned into two distinct paths:
+
+- Write Side (Command Model): Optimized solely for business validation, invariant
+  enforcement, and transactional event appending. Employs lightweight, normalized
+  data models without foreign-key join overhead.
+- Read Side (Query Model): Consists of de-normalized, materialized read projections
+  tailored for specific UI screens and search queries (e.g., Elasticsearch, Redis,
+  read-optimized SQLite replicas). Projections are updated asynchronously via
+  event consumer subscribers.
+
+2.3 TRANSACTIONAL OUTBOX PATTERN
+A notorious challenge in distributed systems is the dual-write problem: updating a
+local database while publishing an event to a remote message broker within a single
+atomic transaction.
+
+Standard Procedure:
+1. When a business transaction occurs, the domain entity and an outgoing message
+   record are persisted within the SAME local ACID database transaction into an
+   "outbox" table.
+2. An asynchronous background process (using Change Data Capture or tailing the
+   outbox table) reads pending messages and publishes them to the message broker.
+3. Upon successful broker acknowledgment, the outbox record is marked published
+   or deleted.
+4. This guarantees at-least-once message delivery without distributed two-phase
+   commit (2PC) transactions.
+
+================================================================================
+3. RESILIENCE & RELIABILITY GUARANTEES
+================================================================================
+
+3.1 IDEMPOTENT CONSUMER DESIGN
+Because modern message brokers (Apache Kafka, AWS SQS, RabbitMQ) enforce
+at-least-once delivery, network interruptions or consumer rebalances can deliver
+duplicate messages. All message consumers MUST be strictly idempotent:
+
+- Idempotency Key: Every message contains a deterministic unique message ID.
+- Deduplication Table: Consumers maintain a local table of processed message IDs.
+- Execution Guard: When a message arrives, the consumer verifies whether the ID
+  has already been processed. If present, the message is acknowledged and skipped
+  without reapplying business logic.
+
+3.2 DEAD LETTER QUEUES (DLQ) & RETRY STRATEGY
+When an unhandled exception or malformed payload prevents message processing:
+- Transient Failures (e.g., downstream network timeout): Retry with exponential
+  backoff and jitter (e.g., initial delay 1s, backoff factor 2.0, max 3 retries).
+- Poison Pill Failures (e.g., corrupted JSON schema): Route the payload to a
+  Dead Letter Queue (DLQ) after retry exhaustion.
+- Alerting & Triage: DLQs are monitored with real-time alerting to enable manual
+  investigation without blocking upstream consumer pipelines.
+
+================================================================================
+4. SUMMARY OF DISTRIBUTED SYSTEM METRICS
+================================================================================
+Metric                      Synchronous REST          Event-Driven Microservices
+--------------------------------------------------------------------------------
+Runtime Coupling            High (Temporal)           Zero (Loose Asynchronous)
+Failure Propagation         Cascading                 Isolated (Buffer Queues)
+Throughput Profile          Blocked by slowest tier   High (Asynchronous Backpressure)
+Consistency Model           Immediate (ACID)          Eventual (BASE)
+Operational Complexity      Low to Moderate           Moderate to High
+--------------------------------------------------------------------------------
